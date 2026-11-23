@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'content.dart';
 import 'pixel.dart';
+import 'sound.dart';
 
 enum EK { player, enemy, enemy2, boss, bullet, ebullet, spark, loot, rival }
 
@@ -92,7 +93,7 @@ class GameWorld extends ChangeNotifier {
   void resize(double nh) {
     if (nh <= 10) return;
     h = nh;
-    player.y = player.y.clamp(40.0, h - 40.0);
+    player.y = player.y.clamp(40.0, h - 40.0).toDouble();
   }
 
   void tryDash() {
@@ -109,8 +110,8 @@ class GameWorld extends ChangeNotifier {
     } else {
       player.y -= 50;
     }
-    player.x = player.x.clamp(24.0, w - 24.0);
-    player.y = player.y.clamp(40.0, h - 40.0);
+    player.x = player.x.clamp(24.0, w - 24.0).toDouble();
+    player.y = player.y.clamp(40.0, h - 40.0).toDouble();
     _spark(player.x, player.y, 10);
     _ban('РЫВОК');
   }
@@ -147,34 +148,41 @@ class GameWorld extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    dt = dt.clamp(0.0, 0.05);
+    dt = dt.clamp(0.0, 0.05).toDouble();
     if (dt <= 0) dt = 1 / 60;
     tick++;
-    shake = (shake - dt * 8).clamp(0.0, 6.0);
+    shake = (shake - dt * 8).clamp(0.0, 6.0).toDouble();
     if (bannerT > 0) bannerT -= dt;
-    dashCd = (dashCd - dt).clamp(0.0, 99);
-    ultCd = (ultCd - dt).clamp(0.0, 99);
+    dashCd = (dashCd - dt).clamp(0.0, 99).toDouble();
+    ultCd = (ultCd - dt).clamp(0.0, 99).toDouble();
     if (dashT > 0) dashT -= dt;
     if (shieldT > 0) shieldT -= dt;
 
     // regen
     if (regenPerSec > 0 && hp < maxHp && shieldT <= 0) {
-      hp = (hp + regenPerSec * dt).clamp(0.0, maxHp);
+      hp = (hp + regenPerSec * dt).clamp(0.0, maxHp).toDouble();
     }
 
-    // free 2D move
+    // Responsive touch movement: constant-speed vector, snapping only inside the final step.
     if (tx != null && ty != null) {
       final dx = tx! - player.x;
       final dy = ty! - player.y;
-      final mul = speedMul * (dashT > 0 ? 2.4 : 1);
-      player.x += (dx * 12 * mul * dt).clamp(-420 * mul * dt, 420 * mul * dt);
-      player.y += (dy * 12 * mul * dt).clamp(-420 * mul * dt, 420 * mul * dt);
+      final distance = sqrt(dx * dx + dy * dy);
+      final dashBoost = dashT > 0 ? 2.35 : 1.0;
+      final step = 520.0 * speedMul * dashBoost * dt;
+      if (distance <= step || distance < 1.8) {
+        player.x = tx!;
+        player.y = ty!;
+      } else if (distance > 0) {
+        player.x += dx / distance * step;
+        player.y += dy / distance * step;
+      }
     }
-    player.x = player.x.clamp(24.0, w - 24.0);
-    player.y = player.y.clamp(48.0, h - 48.0);
+    player.x = player.x.clamp(24.0, w - 24.0).toDouble();
+    player.y = player.y.clamp(48.0, h - 48.0).toDouble();
 
     fireCd -= dt;
-    final rate = (0.15 * fireRateMul * rateUp).clamp(0.06, 0.4);
+    final rate = (0.15 * fireRateMul * rateUp).clamp(0.06, 0.4).toDouble();
     if (fireCd <= 0 && dashT <= 0) {
       fireCd = rate;
       _shot();
@@ -286,6 +294,7 @@ class GameWorld extends ChangeNotifier {
   }
 
   void _shot() {
+    SfxAudio.playShot();
     void b(double ox, double oy, double vx, double vy, [double r = 4]) =>
         ents.add(Ent(kind: EK.bullet, x: player.x + ox, y: player.y + oy, vx: vx, vy: vy, r: r));
     switch (weapon) {
@@ -336,7 +345,7 @@ class GameWorld extends ChangeNotifier {
     }
     if (e.y < 90) e.y += 20 * dt;
     e.x += sin(e.age * (1.4 + e.phase * 0.5)) * (40 + e.phase * 18) * dt;
-    e.x = e.x.clamp(50.0, w - 50.0);
+    e.x = e.x.clamp(50.0, w - 50.0).toDouble();
     if (rng.nextDouble() < 0.02 + e.phase * 0.012) {
       for (var i = 0; i < e.phase; i++) {
         ents.add(Ent(kind: EK.ebullet, x: e.x + (i - e.phase / 2) * 14, y: e.y + 20, vy: 150 + e.phase * 35.0, vx: (rng.nextDouble() - 0.5) * 50 * e.phase, r: 5));
@@ -350,8 +359,8 @@ class GameWorld extends ChangeNotifier {
       final dy = player.y - e.y;
       e.x += dx.sign * 70 * dt;
       e.y += dy.sign * 25 * dt;
-      e.x = e.x.clamp(40.0, w - 40.0);
-      e.y = e.y.clamp(60.0, h * 0.45);
+      e.x = e.x.clamp(40.0, w - 40.0).toDouble();
+      e.y = e.y.clamp(60.0, h * 0.45).toDouble();
       if (rng.nextDouble() < 0.025) {
         ents.add(Ent(kind: EK.ebullet, x: e.x, y: e.y + 14, vy: 200, r: 4));
       }
@@ -359,6 +368,7 @@ class GameWorld extends ChangeNotifier {
   }
 
   void _kill(Ent en) {
+    SfxAudio.playExplosion();
     score += en.kind == EK.boss ? 320 : en.kind == EK.rival ? 200 : en.kind == EK.enemy2 ? 50 : 20;
     shake = en.kind == EK.boss ? 5 : 2;
     if (rng.nextDouble() < 0.55) {
@@ -410,12 +420,12 @@ class GameWorld extends ChangeNotifier {
           spb.paint(c, Offset(e.x, e.y), bossScale);
           final bw = 80.0;
           c.drawRect(Rect.fromLTWH(e.x - bw / 2, e.y - 42, bw, 6), Paint()..color = const Color(0xFF301018));
-          c.drawRect(Rect.fromLTWH(e.x - bw / 2, e.y - 42, bw * (e.hp / e.maxHp).clamp(0, 1), 6), Paint()..color = PO.danger);
+          c.drawRect(Rect.fromLTWH(e.x - bw / 2, e.y - 42, bw * (e.hp / e.maxHp).clamp(0, 1).toDouble(), 6), Paint()..color = PO.danger);
         case EK.rival:
           enemy2Sprite.paint(c, Offset(e.x, e.y), enemyScale + 0.4);
           final bw = 70.0;
           c.drawRect(Rect.fromLTWH(e.x - bw / 2, e.y - 36, bw, 5), Paint()..color = const Color(0xFF201810));
-          c.drawRect(Rect.fromLTWH(e.x - bw / 2, e.y - 36, bw * (e.hp / e.maxHp).clamp(0, 1), 5), Paint()..color = PO.gold);
+          c.drawRect(Rect.fromLTWH(e.x - bw / 2, e.y - 36, bw * (e.hp / e.maxHp).clamp(0, 1).toDouble(), 5), Paint()..color = PO.gold);
         case EK.loot:
           c.drawRect(Rect.fromCenter(center: Offset(e.x, e.y), width: 12, height: 12), Paint()..color = PO.gold);
         default:
@@ -431,7 +441,7 @@ class GameWorld extends ChangeNotifier {
     drawPanel(c, const Rect.fromLTWH(8, hudTop, 160, 44), fill: PO.panel.withOpacity(0.85), border: PO.border);
     // HP bar
     c.drawRect(const Rect.fromLTWH(16, hudTop + 10, 120, 10), Paint()..color = const Color(0xFF3A2030));
-    c.drawRect(Rect.fromLTWH(16, hudTop + 10, 120 * (hp / maxHp).clamp(0, 1), 10), Paint()..color = PO.danger);
+    c.drawRect(Rect.fromLTWH(16, hudTop + 10, 120 * (hp / maxHp).clamp(0, 1).toDouble(), 10), Paint()..color = PO.danger);
     _txt(c, 'HP ${hp.toStringAsFixed(1)}/${maxHp.toStringAsFixed(0)}', 16, hudTop + 26);
     _txt(c, 'SC $score  W$wave', 180, hudTop + 12);
     if (regenPerSec > 0) _txt(c, 'REGEN', 180, hudTop + 28);

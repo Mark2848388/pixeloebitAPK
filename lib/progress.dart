@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'online.dart';
 import 'content.dart';
 
 class PlayerProgress {
@@ -61,9 +62,9 @@ class PlayerProgress {
       if (score > endlessHigh) endlessHigh = score;
     } else if (score > highScore) highScore = score;
     gamesPlayed++;
-    coins += (score / 10).floor().clamp(0, 600);
-    scrap += (score / 35).floor().clamp(0, 40);
-    seasonXp += (score / 18).floor().clamp(1, 100);
+    coins += (score / 10).floor().clamp(0, 600).toInt();
+    scrap += (score / 35).floor().clamp(0, 40).toInt();
+    seasonXp += (score / 18).floor().clamp(1, 100).toInt();
     while (seasonLevel < 30 && seasonXp >= seasonLevel * 100) {
       seasonLevel++;
       pushNote('Сезон: уровень $seasonLevel!');
@@ -168,6 +169,32 @@ class PlayerProgress {
     for (final e in upgradeLv.entries) {
       await p.setInt('up_${e.key}', e.value);
     }
+    final savedAt = DateTime.now().toUtc();
+    await p.setString('po_local_saved_at', savedAt.toIso8601String());
+    OnlineService.queueCloudSave(toJson());
+  }
+
+  Map<String, dynamic> toJson() => {
+    'coins': coins, 'gems': gems, 'scrap': scrap, 'seasonXp': seasonXp, 'seasonLevel': seasonLevel,
+    'highScore': highScore, 'endlessHigh': endlessHigh, 'arenaWins': arenaWins, 'gamesPlayed': gamesPlayed,
+    'campaignWorld': campaignWorld, 'freeChests': freeChests, 'baseLevel': baseLevel, 'premium': premium,
+    'activeHero': activeHero, 'playerName': playerName, 'bio': bio, 'ownedHeroes': ownedHeroes.toList(),
+    'ownedSkins': ownedSkins.toList(), 'upgradeLv': upgradeLv, 'friends': friends, 'notifications': notifications,
+  };
+
+  static PlayerProgress fromJson(Map<String, dynamic> j) {
+    int n(String k, int d) => (j[k] as num?)?.toInt() ?? d;
+    return PlayerProgress(
+      coins: n('coins', 220), gems: n('gems', 40), scrap: n('scrap', 10), seasonXp: n('seasonXp', 0), seasonLevel: n('seasonLevel', 1),
+      highScore: n('highScore', 0), endlessHigh: n('endlessHigh', 0), arenaWins: n('arenaWins', 0), gamesPlayed: n('gamesPlayed', 0), campaignWorld: n('campaignWorld', 0),
+      freeChests: n('freeChests', 1), baseLevel: n('baseLevel', 1), premium: j['premium'] == true, activeHero: j['activeHero']?.toString() ?? 'rex',
+      playerName: j['playerName']?.toString() ?? 'Pilot', bio: j['bio']?.toString() ?? '',
+      ownedHeroes: (j['ownedHeroes'] as List?)?.map((e) => e.toString()).toSet() ?? {'rex'},
+      ownedSkins: (j['ownedSkins'] as List?)?.map((e) => e.toString()).toSet() ?? {'default'},
+      upgradeLv: (j['upgradeLv'] as Map?)?.map((k, v) => MapEntry(k.toString(), (v as num).toInt())) ?? {for (final u in upgrades) u.id: 0},
+      friends: (j['friends'] as List?)?.map((e) => e.toString()).toList() ?? [],
+      notifications: (j['notifications'] as List?)?.map((e) => e.toString()).toList() ?? [],
+    );
   }
 
   static Future<PlayerProgress> load() async {
@@ -176,7 +203,7 @@ class PlayerProgress {
     for (final u in upgrades) {
       up[u.id] = p.getInt('up_${u.id}') ?? 0;
     }
-    return PlayerProgress(
+    final local = PlayerProgress(
       coins: p.getInt('coins') ?? 220,
       gems: p.getInt('gems') ?? 40,
       scrap: p.getInt('scrap') ?? 10,
@@ -198,5 +225,24 @@ class PlayerProgress {
       notifications: p.getStringList('notes') ?? [],
       upgradeLv: up,
     );
+    // Use the cloud copy only when it is newer than this device's local save.
+    final cloud = await OnlineService.loadCloudSave();
+    if (cloud != null) {
+      final cloudTime = DateTime.tryParse(cloud['updated_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+      var localTime = DateTime.tryParse(p.getString('po_local_saved_at') ?? '');
+      if (localTime == null) {
+        // Existing installs from v2.1 have prefs but no timestamp; protect those
+        // local saves from an older cloud snapshot on first upgrade.
+        final hasLocalData = p.containsKey('coins') || p.containsKey('pname') || p.containsKey('hi');
+        localTime = hasLocalData ? DateTime.now().toUtc() : DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+        if (hasLocalData) await p.setString('po_local_saved_at', localTime.toIso8601String());
+      }
+      if (cloudTime.isAfter(localTime)) {
+        final restored = PlayerProgress.fromJson(Map<String, dynamic>.from(cloud['data'] as Map));
+        await restored.save();
+        return restored;
+      }
+    }
+    return local;
   }
 }
