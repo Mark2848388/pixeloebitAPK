@@ -1,26 +1,24 @@
-/// Campaign worlds, heroes, chests — static content for Pixel Orbit.
-
 class WorldInfo {
   final int id;
   final String name;
   final String blurb;
   final int color;
-  final int wavesToClear; // classic waves needed to beat world
+  final int wavesToClear;
   final int bossHp;
   const WorldInfo(this.id, this.name, this.blurb, this.color, this.wavesToClear, this.bossHp);
 }
 
 const worlds = <WorldInfo>[
-  WorldInfo(1, 'Орбита-1', 'Тренировочный сектор', 0xFF4A7AFF, 3, 12),
-  WorldInfo(2, 'Алый Пояс', 'Рой алых дронов', 0xFFFF4A6A, 4, 18),
-  WorldInfo(3, 'Изумрудный Туман', 'Ядовитые стражи', 0xFF40C070, 4, 22),
-  WorldInfo(4, 'Пустошь Неон', 'Скоростные рейдеры', 0xFF40FFC0, 5, 28),
-  WorldInfo(5, 'Солнечный Шпиль', 'Огненные патрули', 0xFFFFB040, 5, 34),
-  WorldInfo(6, 'Теневой Риф', 'Невидимые охотники', 0xFF9B4DFF, 6, 40),
-  WorldInfo(7, 'Крио-Дыра', 'Ледяные тараны', 0xFF80D0FF, 6, 48),
-  WorldInfo(8, 'Багровый Трон', 'Элита империи', 0xFFFF3A4A, 7, 56),
-  WorldInfo(9, 'Звёздный Край', 'Перед финалом', 0xFFFFD34A, 7, 64),
-  WorldInfo(10, 'Ядро Орбиты', 'Финальный босс', 0xFFFF80D0, 8, 80),
+  WorldInfo(1, 'Орбита-1', 'Тренировочный сектор', 0xFF4A7AFF, 3, 40),
+  WorldInfo(2, 'Алый Пояс', 'Рой алых дронов', 0xFFFF4A6A, 4, 55),
+  WorldInfo(3, 'Изумрудный Туман', 'Ядовитые стражи', 0xFF40C070, 4, 70),
+  WorldInfo(4, 'Пустошь Неон', 'Скоростные рейдеры', 0xFF40FFC0, 5, 90),
+  WorldInfo(5, 'Солнечный Шпиль', 'Огненные патрули', 0xFFFFB040, 5, 110),
+  WorldInfo(6, 'Теневой Риф', 'Невидимые охотники', 0xFF9B4DFF, 6, 130),
+  WorldInfo(7, 'Крио-Дыра', 'Ледяные тараны', 0xFF80D0FF, 6, 150),
+  WorldInfo(8, 'Багровый Трон', 'Элита империи', 0xFFFF3A4A, 7, 180),
+  WorldInfo(9, 'Звёздный Край', 'Перед финалом', 0xFFFFD34A, 7, 210),
+  WorldInfo(10, 'Ядро Орбиты', 'Трёхфазный босс', 0xFFFF80D0, 8, 280),
 ];
 
 class HeroInfo {
@@ -28,94 +26,124 @@ class HeroInfo {
   final String name;
   final String role;
   final String desc;
-  final int unlockWorld; // 0 = start
+  final String ultName;
+  final String dashName;
+  final int unlockWorld;
   final int color;
-  final double fireRateMul; // <1 = faster
+  final double fireRateMul;
   final double damageMul;
   final double speedMul;
+  final int bonusLives;
+  final String weapon; // pulse | beam | spread | rail
   const HeroInfo({
     required this.id,
     required this.name,
     required this.role,
     required this.desc,
+    required this.ultName,
+    required this.dashName,
     required this.unlockWorld,
     required this.color,
     this.fireRateMul = 1,
     this.damageMul = 1,
     this.speedMul = 1,
+    this.bonusLives = 0,
+    this.weapon = 'pulse',
   });
 }
 
 const heroes = <HeroInfo>[
   HeroInfo(
     id: 'rex',
-    name: 'Рекс',
-    role: 'Пилот',
-    desc: 'Стандартный огонь. Надёжный старт.',
+    name: 'РЕКС',
+    role: 'Капитан',
+    desc: 'Сбалансированный огонь. Ульта: залп ракет.',
+    ultName: 'ЗАЛП',
+    dashName: 'РЫВОК',
     unlockWorld: 0,
     color: 0xFF4A7AFF,
+    weapon: 'pulse',
   ),
   HeroInfo(
     id: 'nova',
-    name: 'Нова',
+    name: 'НОВА',
     role: 'Стрелок',
-    desc: 'Быстрая стрельба, чуть слабее урон.',
+    desc: 'Быстрый огонь. Ульта: веер лазеров.',
+    ultName: 'ВЕЕР',
+    dashName: 'МИГАЛКА',
     unlockWorld: 2,
-    color: 0xFFFF80D0,
-    fireRateMul: 0.7,
-    damageMul: 0.85,
+    color: 0xFFFF60C0,
+    fireRateMul: 0.65,
+    damageMul: 0.8,
+    weapon: 'spread',
   ),
   HeroInfo(
     id: 'bolt',
-    name: 'Болт',
+    name: 'БОЛТ',
     role: 'Гонщик',
-    desc: 'Выше скорость корабля.',
-    unlockWorld: 4,
-    color: 0xFFFFB040,
-    speedMul: 1.35,
+    desc: 'Скорость и рывок. Ульта: ускорение + щит.',
+    ultName: 'НИТРО',
+    dashName: 'БЛИЦ',
+    unlockWorld: 3,
+    color: 0xFFFFB020,
+    speedMul: 1.4,
+    weapon: 'pulse',
   ),
   HeroInfo(
     id: 'aegis',
-    name: 'Эгида',
+    name: 'ЭГИДА',
     role: 'Танк',
-    desc: '+1 жизнь в начале боя.',
-    unlockWorld: 6,
-    color: 0xFF40C070,
+    desc: '+жизнь. Ульта: щит на 4 сек.',
+    ultName: 'БАРЬЕР',
+    dashName: 'ТОЛЧОК',
+    unlockWorld: 5,
+    color: 0xFF30C070,
+    bonusLives: 1,
+    damageMul: 0.9,
+    weapon: 'beam',
   ),
   HeroInfo(
     id: 'shadow',
-    name: 'Тень',
+    name: 'ТЕНЬ',
     role: 'Ассасин',
-    desc: 'Сильный урон, реже выстрелы.',
-    unlockWorld: 8,
-    color: 0xFF9B4DFF,
-    fireRateMul: 1.25,
-    damageMul: 1.6,
+    desc: 'Сильный урон. Ульта: невидимость + крит.',
+    ultName: 'ЗАТМЕНИЕ',
+    dashName: 'ФАЗОВЫЙ',
+    unlockWorld: 7,
+    color: 0xFF8A40E0,
+    fireRateMul: 1.15,
+    damageMul: 1.55,
+    weapon: 'rail',
   ),
 ];
 
-class ChestDef {
+class WeaponUpgrade {
   final String id;
   final String name;
-  final int priceCoins;
-  final int minCoins;
-  final int maxCoins;
-  final int gemChance; // 0-100
-  final int skinChance;
-  const ChestDef({
-    required this.id,
-    required this.name,
-    required this.priceCoins,
-    required this.minCoins,
-    required this.maxCoins,
-    this.gemChance = 10,
-    this.skinChance = 5,
-  });
+  final int maxLevel;
+  final int baseCost;
+  const WeaponUpgrade(this.id, this.name, this.maxLevel, this.baseCost);
 }
 
-const chests = <ChestDef>[
-  ChestDef(id: 'wood', name: 'Деревянный', priceCoins: 80, minCoins: 40, maxCoins: 120, gemChance: 8, skinChance: 2),
-  ChestDef(id: 'iron', name: 'Железный', priceCoins: 200, minCoins: 100, maxCoins: 280, gemChance: 18, skinChance: 6),
-  ChestDef(id: 'gold', name: 'Золотой', priceCoins: 450, minCoins: 220, maxCoins: 500, gemChance: 35, skinChance: 15),
-  ChestDef(id: 'legend', name: 'Легендарный', priceCoins: 900, minCoins: 400, maxCoins: 900, gemChance: 55, skinChance: 30),
+const upgrades = <WeaponUpgrade>[
+  WeaponUpgrade('dmg', 'Урон', 10, 80),
+  WeaponUpgrade('rate', 'Скорострельность', 10, 80),
+  WeaponUpgrade('dash', 'Рывок КД', 5, 120),
+  WeaponUpgrade('ult', 'Ульта КД', 5, 150),
+  WeaponUpgrade('hull', 'Корпус', 5, 100),
+];
+
+class GameEvent {
+  final String id;
+  final String title;
+  final String desc;
+  final String mode; // classic | endless | arena
+  final double rewardMul;
+  const GameEvent(this.id, this.title, this.desc, this.mode, this.rewardMul);
+}
+
+const events = <GameEvent>[
+  GameEvent('meteor', 'МЕТЕОРНЫЙ ДОЖДЬ', 'x1.5 монет в классике', 'classic', 1.5),
+  GameEvent('arena_cup', 'КУБОК АРЕНЫ', 'Дуэли дают больше XP', 'arena', 1.4),
+  GameEvent('endless_night', 'НОЧЬ БЕЗ КОНЦА', 'Endless x2 очков', 'endless', 2.0),
 ];

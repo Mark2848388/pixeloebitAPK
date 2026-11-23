@@ -1,7 +1,7 @@
 name: pixelorbit
-description: Pixel Orbit — 16-bit space shooter
+description: Pixel Orbit — 16-bit space RPG shooter
 publish_to: "none"
-version: 1.2.0+3
+version: 2.0.0+10
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -10,8 +10,6 @@ dependencies:
   flutter:
     sdk: flutter
   shared_preferences: ^2.3.3
-  supabase_flutter: 2.8.4
-  uuid: ^4.5.1
 
 dev_dependencies:
   flutter_test:
@@ -33,7 +31,3 @@ flutter:
     - assets/icon-512.png
     - assets/icon-192.png
     - assets/icon.png
-
-dependency_overrides:
-  # Keep app_links from using broken flutter.compileSdkVersion path on CI
-  app_links: 6.3.3
