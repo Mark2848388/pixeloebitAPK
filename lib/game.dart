@@ -1,16 +1,16 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'content.dart';
 import 'pixel.dart';
-import 'sound.dart';
 
-enum EK { player, enemy, enemy2, boss, bullet, ebullet, spark, loot, rival }
+enum EK { player, enemy, enemy2, boss, bullet, ebullet, spark, loot, rival, companion }
 
 class Ent {
   EK kind;
   double x, y, vx, vy, hp, maxHp, r, age;
   bool dead;
   int phase;
+  int bossType; // 0 hive, 1 laser, 2 swarm, 3 tank
+  String companionId;
   Ent({
     required this.kind,
     required this.x,
@@ -23,6 +23,8 @@ class Ent {
     this.age = 0,
     this.dead = false,
     this.phase = 1,
+    this.bossType = 0,
+    this.companionId = '',
   });
 }
 
@@ -36,7 +38,7 @@ class GameWorld extends ChangeNotifier {
   final stars = <Offset>[];
 
   int score = 0;
-  double hp = 3; // fractional for regen
+  double hp = 3;
   double maxHp = 3;
   int wave = 0;
   bool gameOver = false, victory = false;
@@ -47,12 +49,12 @@ class GameWorld extends ChangeNotifier {
   int tick = 0;
 
   String mode, heroId, weapon;
-  int worldId, wavesGoal;
+  int worldId, levelId, wavesGoal;
   double fireRateMul, damageMul, speedMul, bossHpBonus;
   double dmgUp, rateUp, dashMul, ultMul, regenPerSec;
-  double? tx, ty; // free 2D target
+  double? tx, ty;
+  String companionId;
 
-  // scale for bigger sprites
   static const shipScale = 4.2;
   static const enemyScale = 3.6;
   static const bossScale = 4.0;
@@ -62,6 +64,7 @@ class GameWorld extends ChangeNotifier {
     required this.h,
     this.mode = 'classic',
     this.worldId = 0,
+    this.levelId = 1,
     this.wavesGoal = 0,
     this.bossHpBonus = 0,
     this.fireRateMul = 1,
@@ -74,6 +77,7 @@ class GameWorld extends ChangeNotifier {
     this.dashMul = 1,
     this.ultMul = 1,
     this.regenPerSec = 0,
+    this.companionId = '',
     int bonusLives = 0,
   }) {
     maxHp = 3.0 + bonusLives;
@@ -81,6 +85,17 @@ class GameWorld extends ChangeNotifier {
     player = Ent(kind: EK.player, x: w / 2, y: h * 0.72, r: 18);
     for (var i = 0; i < 60; i++) {
       stars.add(Offset(rng.nextDouble() * w, rng.nextDouble() * h));
+    }
+    if (companionId.isNotEmpty) {
+      ents.add(Ent(
+        kind: EK.companion,
+        x: player.x - 40,
+        y: player.y + 10,
+        r: 12,
+        companionId: companionId,
+        hp: 999,
+        maxHp: 999,
+      ));
     }
     if (mode == 'arena') {
       ents.add(Ent(kind: EK.rival, x: w / 2, y: 100, hp: 16, maxHp: 16, r: 20));
@@ -93,7 +108,7 @@ class GameWorld extends ChangeNotifier {
   void resize(double nh) {
     if (nh <= 10) return;
     h = nh;
-    player.y = player.y.clamp(40.0, h - 40.0).toDouble();
+    player.y = player.y.clamp(40.0, h - 40.0);
   }
 
   void tryDash() {
@@ -110,8 +125,8 @@ class GameWorld extends ChangeNotifier {
     } else {
       player.y -= 50;
     }
-    player.x = player.x.clamp(24.0, w - 24.0).toDouble();
-    player.y = player.y.clamp(40.0, h - 40.0).toDouble();
+    player.x = player.x.clamp(24.0, w - 24.0);
+    player.y = player.y.clamp(40.0, h - 40.0);
     _spark(player.x, player.y, 10);
     _ban('РЫВОК');
   }
@@ -130,7 +145,6 @@ class GameWorld extends ChangeNotifier {
       case 'bolt':
         dashT = 0.55;
         shieldT = 2.2;
-        speedMul *= 1.05;
       case 'shadow':
         shieldT = 2.8;
         for (var i = 0; i < 4; i++) {
@@ -148,44 +162,46 @@ class GameWorld extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    dt = dt.clamp(0.0, 0.05).toDouble();
+    dt = dt.clamp(0.0, 0.05);
     if (dt <= 0) dt = 1 / 60;
     tick++;
-    shake = (shake - dt * 8).clamp(0.0, 6.0).toDouble();
+    shake = (shake - dt * 8).clamp(0.0, 6.0);
     if (bannerT > 0) bannerT -= dt;
-    dashCd = (dashCd - dt).clamp(0.0, 99).toDouble();
-    ultCd = (ultCd - dt).clamp(0.0, 99).toDouble();
+    dashCd = (dashCd - dt).clamp(0.0, 99);
+    ultCd = (ultCd - dt).clamp(0.0, 99);
     if (dashT > 0) dashT -= dt;
     if (shieldT > 0) shieldT -= dt;
 
-    // regen
     if (regenPerSec > 0 && hp < maxHp && shieldT <= 0) {
-      hp = (hp + regenPerSec * dt).clamp(0.0, maxHp).toDouble();
+      hp = (hp + regenPerSec * dt).clamp(0.0, maxHp);
     }
 
-    // Responsive touch movement: constant-speed vector, snapping only inside the final step.
     if (tx != null && ty != null) {
       final dx = tx! - player.x;
       final dy = ty! - player.y;
-      final distance = sqrt(dx * dx + dy * dy);
-      final dashBoost = dashT > 0 ? 2.35 : 1.0;
-      final step = 520.0 * speedMul * dashBoost * dt;
-      if (distance <= step || distance < 1.8) {
-        player.x = tx!;
-        player.y = ty!;
-      } else if (distance > 0) {
-        player.x += dx / distance * step;
-        player.y += dy / distance * step;
-      }
+      final mul = speedMul * (dashT > 0 ? 2.4 : 1);
+      player.x += (dx * 12 * mul * dt).clamp(-420 * mul * dt, 420 * mul * dt);
+      player.y += (dy * 12 * mul * dt).clamp(-420 * mul * dt, 420 * mul * dt);
     }
-    player.x = player.x.clamp(24.0, w - 24.0).toDouble();
-    player.y = player.y.clamp(48.0, h - 48.0).toDouble();
+    player.x = player.x.clamp(24.0, w - 24.0);
+    player.y = player.y.clamp(48.0, h - 48.0);
 
     fireCd -= dt;
-    final rate = (0.15 * fireRateMul * rateUp).clamp(0.06, 0.4).toDouble();
+    final rate = (0.13 * fireRateMul * rateUp).clamp(0.06, 0.35);
     if (fireCd <= 0 && dashT <= 0) {
       fireCd = rate;
       _shot();
+    }
+
+    // companion AI: follow + shoot
+    for (final c in ents.where((e) => !e.dead && e.kind == EK.companion)) {
+      final tx = player.x - 36;
+      final ty = player.y + 8;
+      c.x += (tx - c.x) * 6 * dt;
+      c.y += (ty - c.y) * 6 * dt;
+      if (tick % 18 == 0) {
+        ents.add(Ent(kind: EK.bullet, x: c.x, y: c.y - 10, vy: -380, r: 3));
+      }
     }
 
     if (mode == 'arena') {
@@ -206,6 +222,8 @@ class GameWorld extends ChangeNotifier {
       e.age += dt;
       e.x += e.vx * dt;
       e.y += e.vy * dt;
+
+      // enemies stay on screen until killed (bounce)
       if (e.kind == EK.enemy || e.kind == EK.enemy2) {
         if (e.x < 20) {
           e.x = 20;
@@ -214,9 +232,18 @@ class GameWorld extends ChangeNotifier {
           e.x = w - 20;
           e.vx = -e.vx.abs();
         }
-        if (e.y > h + 50) e.dead = true;
-        if (rng.nextDouble() < 0.008) {
-          ents.add(Ent(kind: EK.ebullet, x: e.x, y: e.y + 12, vy: 180 + wave * 8.0, r: 4));
+        // bottom bounce — do NOT despawn
+        if (e.y > h - 60) {
+          e.y = h - 60;
+          e.vy = -e.vy.abs() * 0.85 - 20;
+          if (e.vy.abs() < 40) e.vy = -55 - rng.nextDouble() * 30;
+        }
+        if (e.y < 40) {
+          e.y = 40;
+          e.vy = e.vy.abs();
+        }
+        if (rng.nextDouble() < 0.005) {
+          ents.add(Ent(kind: EK.ebullet, x: e.x, y: e.y + 12, vy: 140 + wave * 5.0, r: 4));
         }
       }
       if (e.kind == EK.boss) _boss(e, dt);
@@ -257,7 +284,10 @@ class GameWorld extends ChangeNotifier {
           shake = 5;
           shieldT = 1.1;
           _spark(player.x, player.y, 12);
-          if (e.kind != EK.ebullet && e.kind != EK.boss) e.y = -60;
+          if (e.kind != EK.ebullet && e.kind != EK.boss) {
+            e.y = min(e.y, player.y - 40);
+            e.vy = -80;
+          }
           if (hp <= 0) {
             hp = 0;
             gameOver = true;
@@ -273,7 +303,7 @@ class GameWorld extends ChangeNotifier {
       if (wave >= wavesGoal && !has) {
         victory = true;
         gameOver = true;
-        score += 150 + worldId * 50;
+        score += 80 + worldId * 20 + levelId * 5;
         _ban('ПОБЕДА');
       }
     }
@@ -294,7 +324,6 @@ class GameWorld extends ChangeNotifier {
   }
 
   void _shot() {
-    SfxAudio.playShot();
     void b(double ox, double oy, double vx, double vy, [double r = 4]) =>
         ents.add(Ent(kind: EK.bullet, x: player.x + ox, y: player.y + oy, vx: vx, vy: vy, r: r));
     switch (weapon) {
@@ -314,25 +343,53 @@ class GameWorld extends ChangeNotifier {
 
   void _wave({bool first = false}) {
     wave++;
-    final n = first ? 4 : 3 + min(wave, 10);
+    // Easier baseline: fewer enemies, lower HP/speed
+    final n = mode == 'campaign'
+        ? (first ? 3 : 2 + (levelId > 7 ? 1 : 0))
+        : (first ? 3 : 2 + min(wave, 7));
     for (var i = 0; i < n; i++) {
-      final elite = wave > 2 && rng.nextDouble() < 0.3;
+      final elite = wave > 3 && rng.nextDouble() < 0.18;
       ents.add(Ent(
         kind: elite ? EK.enemy2 : EK.enemy,
         x: 40 + rng.nextDouble() * (w - 80),
         y: first ? 50.0 + i * 40 : -30.0 - rng.nextDouble() * 80,
-        vy: 55 + wave * 6.0 + rng.nextDouble() * 30,
-        vx: (rng.nextDouble() - 0.5) * 50,
-        hp: elite ? 4 : 1,
-        maxHp: elite ? 4 : 1,
-        r: elite ? 22 : 18,
+        vy: 40 + wave * 4.0 + rng.nextDouble() * 20,
+        vx: (rng.nextDouble() - 0.5) * 35,
+        hp: elite ? 2.5 : 1,
+        maxHp: elite ? 2.5 : 1,
+        r: elite ? 20 : 16,
       ));
     }
-    if (wave % 4 == 0 || (mode == 'campaign' && wave == wavesGoal)) {
-      final hp0 = (bossHpBonus > 0 ? bossHpBonus : 35 + wave * 10).toDouble();
-      ents.add(Ent(kind: EK.boss, x: w / 2, y: -40, vy: 24, hp: hp0, maxHp: hp0, r: 32, phase: 1));
-      _ban('БОСС');
+
+    // Campaign: mid-boss on level 5, big boss on level 10 (once per level run)
+    if (mode == 'campaign') {
+      if (levelId == 5 && wave == 1) {
+        _spawnBoss(mid: true);
+      } else if (levelId == 10 && wave == 1) {
+        _spawnBoss(mid: false);
+      }
+    } else if (wave % 5 == 0) {
+      _spawnBoss(mid: wave % 10 != 0);
     }
+  }
+
+  void _spawnBoss({required bool mid}) {
+    final bt = (worldId + levelId) % 4;
+    final names = ['УЛЕЙ', 'ЛАЗЕР', 'РОЙ', 'ТАНК'];
+    final base = bossHpBonus > 0 ? bossHpBonus : 28.0 + worldId * 6;
+    final hp0 = mid ? base * 0.55 : base * 1.15;
+    ents.add(Ent(
+      kind: EK.boss,
+      x: w / 2,
+      y: -40,
+      vy: 20,
+      hp: hp0,
+      maxHp: hp0,
+      r: mid ? 28 : 36,
+      phase: 1,
+      bossType: bt,
+    ));
+    _ban(mid ? 'БОСС: ${names[bt]}' : 'БОЛЬШОЙ БОСС: ${names[bt]}');
   }
 
   void _boss(Ent e, double dt) {
@@ -344,13 +401,35 @@ class GameWorld extends ChangeNotifier {
       shake = 4;
     }
     if (e.y < 90) e.y += 20 * dt;
-    e.x += sin(e.age * (1.4 + e.phase * 0.5)) * (40 + e.phase * 18) * dt;
-    e.x = e.x.clamp(50.0, w - 50.0).toDouble();
-    if (rng.nextDouble() < 0.02 + e.phase * 0.012) {
-      for (var i = 0; i < e.phase; i++) {
-        ents.add(Ent(kind: EK.ebullet, x: e.x + (i - e.phase / 2) * 14, y: e.y + 20, vy: 150 + e.phase * 35.0, vx: (rng.nextDouble() - 0.5) * 50 * e.phase, r: 5));
-      }
+    e.y = e.y.clamp(70.0, h * 0.35);
+
+    switch (e.bossType) {
+      case 1: // laser — tracks X slowly, vertical beams
+        e.x += (player.x - e.x) * 1.2 * dt;
+        if (rng.nextDouble() < 0.025 + e.phase * 0.01) {
+          ents.add(Ent(kind: EK.ebullet, x: e.x, y: e.y + 20, vy: 280 + e.phase * 40.0, r: 6));
+        }
+      case 2: // swarm — spawns mini enemies
+        e.x += sin(e.age * 2) * 50 * dt;
+        if (rng.nextDouble() < 0.012 + e.phase * 0.008) {
+          ents.add(Ent(kind: EK.enemy, x: e.x, y: e.y + 20, vy: 70, vx: (rng.nextDouble() - 0.5) * 80, hp: 1, maxHp: 1, r: 14));
+        }
+      case 3: // tank — slow, heavy spray
+        e.x += sin(e.age * 0.8) * 25 * dt;
+        if (rng.nextDouble() < 0.03 + e.phase * 0.01) {
+          for (var i = -2; i <= 2; i++) {
+            ents.add(Ent(kind: EK.ebullet, x: e.x + i * 12.0, y: e.y + 18, vy: 140 + e.phase * 20.0, vx: i * 30.0, r: 5));
+          }
+        }
+      default: // hive — classic sine + spread
+        e.x += sin(e.age * (1.4 + e.phase * 0.5)) * (40 + e.phase * 18) * dt;
+        if (rng.nextDouble() < 0.02 + e.phase * 0.012) {
+          for (var i = 0; i < e.phase; i++) {
+            ents.add(Ent(kind: EK.ebullet, x: e.x + (i - e.phase / 2) * 14, y: e.y + 20, vy: 150 + e.phase * 35.0, vx: (rng.nextDouble() - 0.5) * 50 * e.phase, r: 5));
+          }
+        }
     }
+    e.x = e.x.clamp(50.0, w - 50.0);
   }
 
   void _arena(double dt) {
@@ -359,8 +438,8 @@ class GameWorld extends ChangeNotifier {
       final dy = player.y - e.y;
       e.x += dx.sign * 70 * dt;
       e.y += dy.sign * 25 * dt;
-      e.x = e.x.clamp(40.0, w - 40.0).toDouble();
-      e.y = e.y.clamp(60.0, h * 0.45).toDouble();
+      e.x = e.x.clamp(40.0, w - 40.0);
+      e.y = e.y.clamp(60.0, h * 0.45);
       if (rng.nextDouble() < 0.025) {
         ents.add(Ent(kind: EK.ebullet, x: e.x, y: e.y + 14, vy: 200, r: 4));
       }
@@ -368,7 +447,6 @@ class GameWorld extends ChangeNotifier {
   }
 
   void _kill(Ent en) {
-    SfxAudio.playExplosion();
     score += en.kind == EK.boss ? 320 : en.kind == EK.rival ? 200 : en.kind == EK.enemy2 ? 50 : 20;
     shake = en.kind == EK.boss ? 5 : 2;
     if (rng.nextDouble() < 0.55) {
@@ -417,17 +495,21 @@ class GameWorld extends ChangeNotifier {
           enemy2Sprite.paint(c, Offset(e.x, e.y), enemyScale);
         case EK.boss:
           final spb = e.phase >= 3 ? bossP3 : e.phase == 2 ? bossP2 : bossP1;
-          spb.paint(c, Offset(e.x, e.y), bossScale);
+          // tint by boss type via flash overlay scale
+          spb.paint(c, Offset(e.x, e.y), bossScale * (e.bossType == 3 ? 1.15 : 1.0));
+          final label = ['УЛЕЙ', 'ЛАЗЕР', 'РОЙ', 'ТАНК'][e.bossType.clamp(0, 3)];
           final bw = 80.0;
-          c.drawRect(Rect.fromLTWH(e.x - bw / 2, e.y - 42, bw, 6), Paint()..color = const Color(0xFF301018));
-          c.drawRect(Rect.fromLTWH(e.x - bw / 2, e.y - 42, bw * (e.hp / e.maxHp).clamp(0, 1).toDouble(), 6), Paint()..color = PO.danger);
+          c.drawRect(Rect.fromLTWH(e.x - bw / 2, e.y - 46, bw, 6), Paint()..color = const Color(0xFF301018));
+          c.drawRect(Rect.fromLTWH(e.x - bw / 2, e.y - 46, bw * (e.hp / e.maxHp).clamp(0, 1), 6), Paint()..color = PO.danger);
+          _txt(c, label, e.x - 18, e.y - 58);
         case EK.rival:
           enemy2Sprite.paint(c, Offset(e.x, e.y), enemyScale + 0.4);
-          final bw = 70.0;
-          c.drawRect(Rect.fromLTWH(e.x - bw / 2, e.y - 36, bw, 5), Paint()..color = const Color(0xFF201810));
-          c.drawRect(Rect.fromLTWH(e.x - bw / 2, e.y - 36, bw * (e.hp / e.maxHp).clamp(0, 1).toDouble(), 5), Paint()..color = PO.gold);
         case EK.loot:
           c.drawRect(Rect.fromCenter(center: Offset(e.x, e.y), width: 12, height: 12), Paint()..color = PO.gold);
+        case EK.companion:
+          // small green drone
+          c.drawCircle(Offset(e.x, e.y), 8, Paint()..color = const Color(0xFF40FFA0));
+          c.drawCircle(Offset(e.x, e.y), 4, Paint()..color = const Color(0xFFE0FFE8));
         default:
           break;
       }
@@ -436,24 +518,21 @@ class GameWorld extends ChangeNotifier {
     final flash = shieldT > 0 && tick % 4 < 2 ? Colors.white24 : null;
     heroSprite(heroId).paint(c, Offset(player.x, player.y), shipScale, flash: flash);
 
-    // === HUD bottom-safe: HP bar top with padding ===
     const hudTop = 36.0;
     drawPanel(c, const Rect.fromLTWH(8, hudTop, 160, 44), fill: PO.panel.withOpacity(0.85), border: PO.border);
-    // HP bar
     c.drawRect(const Rect.fromLTWH(16, hudTop + 10, 120, 10), Paint()..color = const Color(0xFF3A2030));
-    c.drawRect(Rect.fromLTWH(16, hudTop + 10, 120 * (hp / maxHp).clamp(0, 1).toDouble(), 10), Paint()..color = PO.danger);
+    c.drawRect(Rect.fromLTWH(16, hudTop + 10, 120 * (hp / maxHp).clamp(0, 1), 10), Paint()..color = PO.danger);
     _txt(c, 'HP ${hp.toStringAsFixed(1)}/${maxHp.toStringAsFixed(0)}', 16, hudTop + 26);
     _txt(c, 'SC $score  W$wave', 180, hudTop + 12);
-    if (regenPerSec > 0) _txt(c, 'REGEN', 180, hudTop + 28);
+    if (companionId.isNotEmpty) _txt(c, 'DRONE', 180, hudTop + 28);
 
-    // ability CD bottom
     drawPanel(c, Rect.fromLTWH(8, h - 40, 100, 28), fill: PO.panel2, border: dashCd > 0 ? PO.border : PO.ok);
     _txt(c, dashCd > 0 ? 'DASH ${dashCd.toStringAsFixed(1)}' : 'DASH', 16, h - 32);
     drawPanel(c, Rect.fromLTWH(116, h - 40, 100, 28), fill: PO.panel2, border: ultCd > 0 ? PO.border : PO.ok);
     _txt(c, ultCd > 0 ? 'ULT ${ultCd.toStringAsFixed(1)}' : 'ULT', 124, h - 32);
 
     if (bannerT > 0) {
-      final box = Rect.fromCenter(center: Offset(w / 2, h * 0.22), width: 200, height: 34);
+      final box = Rect.fromCenter(center: Offset(w / 2, h * 0.22), width: 220, height: 34);
       drawPanel(c, box, border: PO.gold);
       _txt(c, banner, w / 2 - banner.length * 4.2, h * 0.22 - 6);
     }

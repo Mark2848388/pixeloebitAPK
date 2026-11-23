@@ -1,17 +1,37 @@
+import 'dart:convert';
 import 'dart:math';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'online.dart';
 import 'content.dart';
+
+class PlacedBuilding {
+  final String id;
+  final String defId;
+  double x, y; // 0..1 normalized hangar
+  int level;
+  PlacedBuilding({required this.id, required this.defId, required this.x, required this.y, this.level = 1});
+
+  Map<String, dynamic> toJson() => {'id': id, 'defId': defId, 'x': x, 'y': y, 'level': level};
+  factory PlacedBuilding.fromJson(Map<String, dynamic> j) => PlacedBuilding(
+        id: j['id'] as String,
+        defId: j['defId'] as String,
+        x: (j['x'] as num).toDouble(),
+        y: (j['y'] as num).toDouble(),
+        level: (j['level'] as int?) ?? 1,
+      );
+}
 
 class PlayerProgress {
   int coins, gems, scrap, seasonXp, seasonLevel, highScore, endlessHigh, arenaWins, gamesPlayed;
-  int campaignWorld, freeChests, baseLevel;
+  int campaignWorld, campaignStages, freeChests, baseLevel;
   bool premium;
-  String activeHero, playerName, bio;
-  Set<String> ownedHeroes, ownedSkins;
+  String activeHero, playerName, bio, activeCompanion, profilePhotoPath;
+  Set<String> ownedHeroes, ownedSkins, ownedChars;
   Map<String, int> upgradeLv;
   List<String> friends;
-  List<String> notifications; // recent in-app
+  List<String> notifications;
+  List<PlacedBuilding> hangar;
+  Set<int> claimedSeason;
+  DateTime? lastCollect;
 
   PlayerProgress({
     this.coins = 220,
@@ -24,65 +44,145 @@ class PlayerProgress {
     this.arenaWins = 0,
     this.gamesPlayed = 0,
     this.campaignWorld = 0,
-    this.freeChests = 1,
+    this.campaignStages = 0,
+    this.freeChests = 2,
     this.baseLevel = 1,
     this.premium = false,
     this.activeHero = 'rex',
     this.playerName = 'Pilot',
     this.bio = '',
+    this.activeCompanion = '',
+    this.profilePhotoPath = '',
     Set<String>? ownedHeroes,
     Set<String>? ownedSkins,
+    Set<String>? ownedChars,
     Map<String, int>? upgradeLv,
     List<String>? friends,
     List<String>? notifications,
+    List<PlacedBuilding>? hangar,
+    Set<int>? claimedSeason,
+    this.lastCollect,
   })  : ownedHeroes = ownedHeroes ?? {'rex'},
         ownedSkins = ownedSkins ?? {'default'},
+        ownedChars = ownedChars ?? {'c_pio'},
         upgradeLv = upgradeLv ?? {for (final u in upgrades) u.id: 0},
         friends = friends ?? [],
-        notifications = notifications ?? [];
+        notifications = notifications ?? [],
+        hangar = hangar ?? [],
+        claimedSeason = claimedSeason ?? {};
 
   HeroInfo get hero => heroes.firstWhere((h) => h.id == activeHero, orElse: () => heroes.first);
-  bool worldUnlocked(int id) => id <= campaignWorld + 1;
-  bool worldCleared(int id) => id <= campaignWorld;
+  bool worldUnlocked(int id) => id <= (campaignStages ~/ 10) + 1;
+  bool worldCleared(int id) => id <= (campaignStages ~/ 10);
+  /// Highest unlocked level in world (1..10). World must be unlocked.
+  int unlockedLevelInWorld(int worldId) {
+    final fully = campaignStages ~/ 10;
+    if (worldId <= fully) return 10;
+    if (worldId == fully + 1) return (campaignStages % 10) + 1;
+    return 0;
+  }
+  bool levelUnlocked(int worldId, int level) {
+    if (!worldUnlocked(worldId)) return false;
+    return level <= unlockedLevelInWorld(worldId);
+  }
 
-  double get dmgMul => 1 + (upgradeLv['dmg'] ?? 0) * 0.12;
+  double get dmgMul {
+    var m = 1 + (upgradeLv['dmg'] ?? 0) * 0.12;
+    if (hangar.any((b) => b.defId == 'turret')) m += 0.08;
+    return m;
+  }
+
   double get rateMul => 1 - (upgradeLv['rate'] ?? 0) * 0.05;
   double get dashCdMul => 1 - (upgradeLv['dash'] ?? 0) * 0.1;
   double get ultCdMul => 1 - (upgradeLv['ult'] ?? 0) * 0.1;
   int get extraHull => upgradeLv['hull'] ?? 0;
-  double get regenPerSec => (upgradeLv['regen'] ?? 0) * 0.15; // HP units per sec toward max lives display
+  double get regenPerSec => (upgradeLv['regen'] ?? 0) * 0.15;
 
   void pushNote(String msg) {
     notifications.insert(0, msg);
-    if (notifications.length > 30) notifications.removeLast();
+    if (notifications.length > 40) notifications.removeLast();
   }
 
   void addScore(int score, {String mode = 'classic'}) {
     if (mode == 'endless') {
       if (score > endlessHigh) endlessHigh = score;
-    } else if (score > highScore) highScore = score;
+    } else if (score > highScore) {
+      highScore = score;
+    }
     gamesPlayed++;
-    coins += (score / 10).floor().clamp(0, 600).toInt();
-    scrap += (score / 35).floor().clamp(0, 40).toInt();
-    seasonXp += (score / 18).floor().clamp(1, 100).toInt();
-    while (seasonLevel < 30 && seasonXp >= seasonLevel * 100) {
+    coins += (score / 10).floor().clamp(0, 600);
+    scrap += (score / 35).floor().clamp(0, 40);
+    addSeasonXp((score / 15).floor().clamp(1, 120));
+  }
+
+  void addSeasonXp(int xp) {
+    seasonXp += xp;
+    while (seasonLevel < 40 && seasonXp >= seasonLevel * 80) {
+      seasonXp -= seasonLevel * 80;
       seasonLevel++;
       pushNote('Сезон: уровень $seasonLevel!');
     }
+    if (seasonLevel > 40) seasonLevel = 40;
+  }
+
+  bool claimSeasonLevel(int lv) {
+    if (lv > seasonLevel || claimedSeason.contains(lv)) return false;
+    final reward = seasonTrack.firstWhere((r) => r.level == lv, orElse: () => SeasonReward(lv, '?'));
+    coins += reward.coins;
+    gems += reward.gems;
+    scrap += reward.scrap;
+    if (reward.charId != null) {
+      ownedChars.add(reward.charId!);
+      pushNote('Персонаж: ${reward.charId}');
+    }
+    claimedSeason.add(lv);
+    pushNote('Сезон Lv$lv получен');
+    return true;
   }
 
   void clearWorld(int id) {
-    if (id > campaignWorld) {
+    // legacy: treat as clearing full world
+    final target = id * 10;
+    if (campaignStages < target) {
+      campaignStages = target;
       campaignWorld = id;
-      freeChests++;
+      freeChests += 2;
       coins += 80 + id * 25;
       gems += 2;
       scrap += 8 + id;
-      pushNote('Мир $id пройден! +сундук');
-      for (final h in heroes) {
-        if (h.unlockWorld > 0 && h.unlockWorld <= campaignWorld) {
-          if (ownedHeroes.add(h.id)) pushNote('Герой открыт: ${h.name}');
-        }
+      pushNote('Мир $id пройден!');
+      _unlockHeroes();
+    }
+  }
+
+  void clearCampaignLevel(int worldId, int level) {
+    final stageIndex = (worldId - 1) * 10 + level; // 1..100 when cleared
+    if (stageIndex <= campaignStages) return;
+    if (stageIndex > campaignStages + 1) return; // must be sequential
+    campaignStages = stageIndex;
+    campaignWorld = campaignStages ~/ 10;
+    coins += 25 + worldId * 3 + level * 2;
+    scrap += 3 + level ~/ 2;
+    addSeasonXp(8 + level);
+    if (level == 5) {
+      freeChests++;
+      pushNote('Мир $worldId ур.5 — босс!');
+    }
+    if (level == 10) {
+      freeChests += 2;
+      gems += 1;
+      pushNote('Мир $worldId пройден!');
+      _unlockHeroes();
+    } else {
+      pushNote('Мир $worldId — уровень $level');
+    }
+  }
+
+  void _unlockHeroes() {
+    final w = campaignStages ~/ 10;
+    for (final h in heroes) {
+      if (h.unlockWorld > 0 && h.unlockWorld <= w) {
+        if (ownedHeroes.add(h.id)) pushNote('Герой: ${h.name}');
       }
     }
   }
@@ -124,18 +224,72 @@ class PlayerProgress {
     return true;
   }
 
-  Map<String, int>? openFreeChest() {
+  /// Chest: roll character by rarity weights
+  PixelChar? openCharacterChest() {
     if (freeChests <= 0) return null;
     freeChests--;
     final r = Random();
-    final c = 50 + r.nextInt(90);
-    final g = r.nextInt(100) < 30 ? 1 + r.nextInt(4) : 0;
-    final s = 8 + r.nextInt(20);
-    coins += c;
-    gems += g;
-    scrap += s;
-    pushNote('Сундук: +$c C, +$s S');
-    return {'coins': c, 'gems': g, 'scrap': s};
+    final roll = r.nextDouble();
+    CharRarity rarity;
+    if (roll < 0.02) {
+      rarity = CharRarity.legendary;
+    } else if (roll < 0.12) {
+      rarity = CharRarity.epic;
+    } else if (roll < 0.40) {
+      rarity = CharRarity.rare;
+    } else {
+      rarity = CharRarity.common;
+    }
+    final pool = pixelChars.where((c) => c.rarity == rarity && c.id != 'c_d56').toList();
+    // D-56 only from season or tiny chance if legendary
+    final use = pool.isEmpty ? pixelChars.where((c) => c.rarity == CharRarity.common).toList() : pool;
+    final got = use[r.nextInt(use.length)];
+    ownedChars.add(got.id);
+    coins += 40 + r.nextInt(60);
+    scrap += 5 + r.nextInt(15);
+    pushNote('Сундук: ${got.name} (${rarityName(got.rarity)})');
+    return got;
+  }
+
+  Map<String, int>? openFreeChest() {
+    final ch = openCharacterChest();
+    if (ch == null) return null;
+    return {'coins': 40, 'gems': 0, 'scrap': 8};
+  }
+
+  bool placeBuilding(String defId, double x, double y) {
+    BuildingDef? def;
+    for (final b in buildings) {
+      if (b.id == defId) def = b;
+    }
+    if (def == null) return false;
+    if (coins < def.cost) return false;
+    if (hangar.length >= 12) return false;
+    coins -= def.cost;
+    hangar.add(PlacedBuilding(id: 'b${DateTime.now().millisecondsSinceEpoch}', defId: defId, x: x.clamp(0.08, 0.92), y: y.clamp(0.15, 0.88)));
+    pushNote('Постройка: ${def.name}');
+    return true;
+  }
+
+  int collectHangarIncome() {
+    final now = DateTime.now();
+    final last = lastCollect ?? now.subtract(const Duration(minutes: 30));
+    final hours = now.difference(last).inMinutes / 60.0;
+    if (hours < 0.05) return 0;
+    var gain = 0;
+    for (final b in hangar) {
+      BuildingDef? def;
+      for (final d in buildings) {
+        if (d.id == b.defId) def = d;
+      }
+      if (def == null) continue;
+      gain += (def.coinsPerHour * hours * b.level).round();
+    }
+    gain = gain.clamp(0, 5000);
+    coins += gain;
+    lastCollect = now;
+    if (gain > 0) pushNote('Ангар: +$gain C');
+    return gain;
   }
 
   void addFriend(String n) {
@@ -157,44 +311,25 @@ class PlayerProgress {
     await p.setInt('aw', arenaWins);
     await p.setInt('gp', gamesPlayed);
     await p.setInt('cw', campaignWorld);
+    await p.setInt('cstages', campaignStages);
     await p.setInt('fc', freeChests);
     await p.setInt('bl', baseLevel);
     await p.setBool('prem', premium);
     await p.setString('hero', activeHero);
+    await p.setString('comp', activeCompanion);
+    await p.setString('photo', profilePhotoPath);
     await p.setString('pname', playerName);
     await p.setString('bio', bio);
     await p.setStringList('heroes', ownedHeroes.toList());
+    await p.setStringList('chars', ownedChars.toList());
     await p.setStringList('friends', friends);
     await p.setStringList('notes', notifications);
+    await p.setStringList('season_claim', claimedSeason.map((e) => '$e').toList());
+    await p.setString('hangar', jsonEncode(hangar.map((e) => e.toJson()).toList()));
+    if (lastCollect != null) await p.setString('lastCollect', lastCollect!.toIso8601String());
     for (final e in upgradeLv.entries) {
       await p.setInt('up_${e.key}', e.value);
     }
-    final savedAt = DateTime.now().toUtc();
-    await p.setString('po_local_saved_at', savedAt.toIso8601String());
-    OnlineService.queueCloudSave(toJson());
-  }
-
-  Map<String, dynamic> toJson() => {
-    'coins': coins, 'gems': gems, 'scrap': scrap, 'seasonXp': seasonXp, 'seasonLevel': seasonLevel,
-    'highScore': highScore, 'endlessHigh': endlessHigh, 'arenaWins': arenaWins, 'gamesPlayed': gamesPlayed,
-    'campaignWorld': campaignWorld, 'freeChests': freeChests, 'baseLevel': baseLevel, 'premium': premium,
-    'activeHero': activeHero, 'playerName': playerName, 'bio': bio, 'ownedHeroes': ownedHeroes.toList(),
-    'ownedSkins': ownedSkins.toList(), 'upgradeLv': upgradeLv, 'friends': friends, 'notifications': notifications,
-  };
-
-  static PlayerProgress fromJson(Map<String, dynamic> j) {
-    int n(String k, int d) => (j[k] as num?)?.toInt() ?? d;
-    return PlayerProgress(
-      coins: n('coins', 220), gems: n('gems', 40), scrap: n('scrap', 10), seasonXp: n('seasonXp', 0), seasonLevel: n('seasonLevel', 1),
-      highScore: n('highScore', 0), endlessHigh: n('endlessHigh', 0), arenaWins: n('arenaWins', 0), gamesPlayed: n('gamesPlayed', 0), campaignWorld: n('campaignWorld', 0),
-      freeChests: n('freeChests', 1), baseLevel: n('baseLevel', 1), premium: j['premium'] == true, activeHero: j['activeHero']?.toString() ?? 'rex',
-      playerName: j['playerName']?.toString() ?? 'Pilot', bio: j['bio']?.toString() ?? '',
-      ownedHeroes: (j['ownedHeroes'] as List?)?.map((e) => e.toString()).toSet() ?? {'rex'},
-      ownedSkins: (j['ownedSkins'] as List?)?.map((e) => e.toString()).toSet() ?? {'default'},
-      upgradeLv: (j['upgradeLv'] as Map?)?.map((k, v) => MapEntry(k.toString(), (v as num).toInt())) ?? {for (final u in upgrades) u.id: 0},
-      friends: (j['friends'] as List?)?.map((e) => e.toString()).toList() ?? [],
-      notifications: (j['notifications'] as List?)?.map((e) => e.toString()).toList() ?? [],
-    );
   }
 
   static Future<PlayerProgress> load() async {
@@ -203,7 +338,19 @@ class PlayerProgress {
     for (final u in upgrades) {
       up[u.id] = p.getInt('up_${u.id}') ?? 0;
     }
-    final local = PlayerProgress(
+    List<PlacedBuilding> hangar = [];
+    try {
+      final raw = p.getString('hangar');
+      if (raw != null) {
+        hangar = (jsonDecode(raw) as List).map((e) => PlacedBuilding.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+      }
+    } catch (_) {}
+    final claimed = (p.getStringList('season_claim') ?? []).map((e) => int.tryParse(e) ?? 0).where((e) => e > 0).toSet();
+    DateTime? last;
+    final lc = p.getString('lastCollect');
+    if (lc != null) last = DateTime.tryParse(lc);
+
+    return PlayerProgress(
       coins: p.getInt('coins') ?? 220,
       gems: p.getInt('gems') ?? 40,
       scrap: p.getInt('scrap') ?? 10,
@@ -214,35 +361,23 @@ class PlayerProgress {
       arenaWins: p.getInt('aw') ?? 0,
       gamesPlayed: p.getInt('gp') ?? 0,
       campaignWorld: p.getInt('cw') ?? 0,
-      freeChests: p.getInt('fc') ?? 1,
+      campaignStages: p.getInt('cstages') ?? 0,
+      freeChests: p.getInt('fc') ?? 2,
       baseLevel: p.getInt('bl') ?? 1,
       premium: p.getBool('prem') ?? false,
       activeHero: p.getString('hero') ?? 'rex',
+      activeCompanion: p.getString('comp') ?? '',
+      profilePhotoPath: p.getString('photo') ?? '',
       playerName: p.getString('pname') ?? 'Pilot',
       bio: p.getString('bio') ?? '',
       ownedHeroes: (p.getStringList('heroes') ?? ['rex']).toSet(),
+      ownedChars: (p.getStringList('chars') ?? ['c_pio']).toSet(),
       friends: p.getStringList('friends') ?? [],
       notifications: p.getStringList('notes') ?? [],
       upgradeLv: up,
+      hangar: hangar,
+      claimedSeason: claimed,
+      lastCollect: last,
     );
-    // Use the cloud copy only when it is newer than this device's local save.
-    final cloud = await OnlineService.loadCloudSave();
-    if (cloud != null) {
-      final cloudTime = DateTime.tryParse(cloud['updated_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
-      var localTime = DateTime.tryParse(p.getString('po_local_saved_at') ?? '');
-      if (localTime == null) {
-        // Existing installs from v2.1 have prefs but no timestamp; protect those
-        // local saves from an older cloud snapshot on first upgrade.
-        final hasLocalData = p.containsKey('coins') || p.containsKey('pname') || p.containsKey('hi');
-        localTime = hasLocalData ? DateTime.now().toUtc() : DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
-        if (hasLocalData) await p.setString('po_local_saved_at', localTime.toIso8601String());
-      }
-      if (cloudTime.isAfter(localTime)) {
-        final restored = PlayerProgress.fromJson(Map<String, dynamic>.from(cloud['data'] as Map));
-        await restored.save();
-        return restored;
-      }
-    }
-    return local;
   }
 }

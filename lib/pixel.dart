@@ -111,3 +111,33 @@ PixSprite heroSprite(String id) {
     default: return shipRex;
   }
 }
+
+
+void paintPixelPerson(Canvas c, Offset center, double scale, {required int color, int style = 0}) {
+  final paint = Paint()..isAntiAlias = false;
+  final col = Color(color);
+  // body
+  paint.color = col;
+  c.drawRect(Rect.fromCenter(center: center.translate(0, 4 * scale), width: 6 * scale, height: 8 * scale), paint);
+  // head
+  paint.color = const Color(0xFFFFE0C0);
+  c.drawRect(Rect.fromCenter(center: center.translate(0, -4 * scale), width: 7 * scale, height: 7 * scale), paint);
+  // hair
+  paint.color = style == 1 ? const Color(0xFF1A1A22) : col.withOpacity(0.85);
+  c.drawRect(Rect.fromLTWH(center.dx - 3.5 * scale, center.dy - 8 * scale, 7 * scale, 3 * scale), paint);
+  if (style == 1) {
+    // glasses D-56
+    paint.color = const Color(0xFF202028);
+    c.drawRect(Rect.fromLTWH(center.dx - 3 * scale, center.dy - 5 * scale, 2.5 * scale, 2 * scale), paint);
+    c.drawRect(Rect.fromLTWH(center.dx + 0.5 * scale, center.dy - 5 * scale, 2.5 * scale, 2 * scale), paint);
+    c.drawRect(Rect.fromLTWH(center.dx - 0.5 * scale, center.dy - 4.2 * scale, 1 * scale, 0.8 * scale), paint);
+  } else {
+    paint.color = const Color(0xFF202028);
+    c.drawRect(Rect.fromLTWH(center.dx - 2 * scale, center.dy - 5 * scale, 1.2 * scale, 1.2 * scale), paint);
+    c.drawRect(Rect.fromLTWH(center.dx + 0.8 * scale, center.dy - 5 * scale, 1.2 * scale, 1.2 * scale), paint);
+  }
+  // legs
+  paint.color = const Color(0xFF3A4060);
+  c.drawRect(Rect.fromLTWH(center.dx - 2.5 * scale, center.dy + 8 * scale, 2 * scale, 3 * scale), paint);
+  c.drawRect(Rect.fromLTWH(center.dx + 0.5 * scale, center.dy + 8 * scale, 2 * scale, 3 * scale), paint);
+}
