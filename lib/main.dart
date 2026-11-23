@@ -98,7 +98,7 @@ class _MainMenuState extends State<MainMenu> with SingleTickerProviderStateMixin
   late final Ticker _ticker;
   double _time = 0;
   PlayerProgress get p => widget.progress;
-  static const _seasonEnd = DateTime(2026, 12, 1);
+  static final _seasonEnd = DateTime(2026, 12, 1);
 
   @override
   void initState() {
