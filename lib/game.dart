@@ -46,6 +46,9 @@ class GameWorld extends ChangeNotifier {
   double? targetX;
   bool firing = true;
   int tick = 0;
+  double raidAlertTimer = 0;
+  String raidAlert = '';
+  int bossDefeats = 0;
 
   String mode; // classic | endless
   int skinColor;
@@ -111,14 +114,17 @@ class GameWorld extends ChangeNotifier {
         radius: elite ? 14 : 12,
       ));
     }
-    if (wave > 0 && wave % 5 == 0) {
+    if (wave > 0 && wave % 3 == 0) {
+      raidAlert = '⚠ RAID BOSS — WAVE $wave';
+      raidAlertTimer = 4.5;
+
       entities.add(Entity(
         kind: EntityKind.boss,
         x: w / 2,
         y: -50,
         vy: 30,
-        hp: (18.0 + wave * 3) + bossHpBonus,
-        radius: 22,
+        hp: (24.0 + wave * 5) + bossHpBonus,
+        radius: 26,
       ));
     }
   }
@@ -128,6 +134,7 @@ class GameWorld extends ChangeNotifier {
     if (dt <= 0) dt = 1 / 60;
     if (dt > 0.05) dt = 0.05;
     tick++;
+    raidAlertTimer = (raidAlertTimer - dt).clamp(0.0, 5.0);
     shake = (shake - dt * 8).clamp(0.0, 5.0);
 
     if (targetX != null) {
@@ -242,11 +249,12 @@ class GameWorld extends ChangeNotifier {
           if (en.hp <= 0) {
             en.dead = true;
             score += en.kind == EntityKind.boss
-                ? 250
+                ? 450
                 : en.kind == EntityKind.enemy2
                     ? 40
                     : 15;
             shake = 3;
+            if (en.kind == EntityKind.boss) bossDefeats++;
           }
           break;
         }
@@ -397,6 +405,22 @@ class GameWorld extends ChangeNotifier {
     _drawHudText(canvas, 'SCORE $score', 60, 12);
     _drawHudText(canvas, 'WAVE $wave', 180, 12);
     _drawHudText(canvas, 'T$tick', 300, 12);
+
+    if (raidAlertTimer > 0) {
+      final alertBox = Rect.fromLTWH(42, 42, w - 84, 38);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(alertBox, const Radius.circular(5)),
+        Paint()..color = const Color(0xDD8A1730),
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(alertBox, const Radius.circular(5)),
+        Paint()
+          ..color = const Color(0xFFFF5A78)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2,
+      );
+      _drawHudText(canvas, raidAlert, 54, 54);
+    }
 
     if (gameOver) {
       final box =
