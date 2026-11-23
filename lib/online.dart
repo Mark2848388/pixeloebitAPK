@@ -127,7 +127,7 @@ class OnlineService {
     }
   }
 
-  static double pow10(double x) => (1.0 * 10).powApprox(x);
+  static double pow10(double x) => math.pow(10, x).toDouble();
 
   static Future<List<Map<String, dynamic>>> listFriends() async {
     final c = client;
