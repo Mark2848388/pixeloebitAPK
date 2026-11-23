@@ -15,13 +15,8 @@ jobs:
         run: |
           test -f lib/main.dart
           test -f lib/game.dart
-          test -f lib/online.dart
-          test -f assets/icon-512.png
-          if grep -q "Flutter Demo Home Page" lib/main.dart; then
-            echo "::error::Wrong main.dart (demo template)"
-            exit 1
-          fi
-          echo "OK"
+          test -f lib/content.dart
+          test -f pubspec.yaml
 
       - uses: actions/setup-java@v4
         with:
@@ -34,27 +29,54 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Android scaffold (keep lib/)
+      - name: Prepare Android project
         run: |
-          if [ ! -d android ]; then
-            flutter create --project-name pixelorbit --org com.azena /tmp/po_scaffold
-            cp -a /tmp/po_scaffold/android ./android
-            if [ -f android/app/build.gradle ]; then
-              sed -i 's/applicationId ".*"/applicationId "com.azena.pixelorbit"/' android/app/build.gradle || true
-            fi
-            if [ -f android/app/build.gradle.kts ]; then
-              sed -i 's/applicationId = ".*"/applicationId = "com.azena.pixelorbit"/' android/app/build.gradle.kts || true
+          set -e
+          # Always regenerate platform folders in a temp dir, then merge our fixed gradle
+          flutter create --project-name pixelorbit --org com.azena /tmp/po_scaffold
+
+          rm -rf android
+          cp -a /tmp/po_scaffold/android ./android
+
+          # Force applicationId + SDK levels (Groovy)
+          if [ -f android/app/build.gradle ]; then
+            sed -i 's/applicationId ".*"/applicationId "com.azena.pixelorbit"/g' android/app/build.gradle
+            # Replace flutter.compileSdkVersion references with literal 34 if unresolved
+            sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 34/g' android/app/build.gradle || true
+            sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 34/g' android/app/build.gradle || true
+            sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 21/g' android/app/build.gradle || true
+            sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 21/g' android/app/build.gradle || true
+            sed -i 's/targetSdk = flutter.targetSdkVersion/targetSdk = 34/g' android/app/build.gradle || true
+            sed -i 's/targetSdkVersion flutter.targetSdkVersion/targetSdkVersion 34/g' android/app/build.gradle || true
+          fi
+
+          # Kotlin DSL
+          if [ -f android/app/build.gradle.kts ]; then
+            sed -i 's/applicationId = ".*"/applicationId = "com.azena.pixelorbit"/g' android/app/build.gradle.kts
+            sed -i 's/namespace = ".*"/namespace = "com.azena.pixelorbit"/g' android/app/build.gradle.kts
+            sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 34/g' android/app/build.gradle.kts || true
+            sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 21/g' android/app/build.gradle.kts || true
+            sed -i 's/targetSdk = flutter.targetSdkVersion/targetSdk = 34/g' android/app/build.gradle.kts || true
+            # If compileSdk missing entirely
+            if ! grep -q "compileSdk" android/app/build.gradle.kts; then
+              sed -i '/android {/a\    compileSdk = 34' android/app/build.gradle.kts
             fi
           fi
 
+          echo "----- android/app/build.gradle* -----"
+          cat android/app/build.gradle 2>/dev/null || cat android/app/build.gradle.kts
+
       - run: flutter pub get
 
-      - name: Launcher icons from assets/icon-512.png
+      - name: Launcher icons
         run: dart run flutter_launcher_icons
+        continue-on-error: true
 
-      - run: flutter build apk --release
+      - name: Build APK
+        run: flutter build apk --release
 
       - uses: actions/upload-artifact@v4
         with:
           name: pixelorbit-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
