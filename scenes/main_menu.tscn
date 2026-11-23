@@ -1,0 +1,113 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/main_menu.gd" id="1"]
+
+[node name="MainMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1")
+
+[node name="BG" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.02, 0.031, 0.094, 1)
+
+[node name="Title" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_top = 24.0
+offset_bottom = 56.0
+theme_override_colors/font_color = Color(1, 0.827, 0.29, 1)
+theme_override_font_sizes/font_size = 28
+text = "PIXEL ORBIT"
+horizontal_alignment = 1
+
+[node name="Sub" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_top = 56.0
+offset_bottom = 78.0
+theme_override_colors/font_color = Color(0.54, 0.59, 0.69, 1)
+theme_override_font_sizes/font_size = 12
+text = "GODOT  ·  16-BIT"
+horizontal_alignment = 1
+
+[node name="TopBar" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 16.0
+offset_top = 90.0
+offset_right = -16.0
+offset_bottom = 120.0
+
+[node name="Coins" type="Label" parent="TopBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.91, 0.93, 1, 1)
+theme_override_font_sizes/font_size = 13
+text = "C 0"
+
+[node name="Hero" type="Label" parent="TopBar"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.36, 0.55, 1, 1)
+theme_override_font_sizes/font_size = 13
+text = "РЕКС"
+horizontal_alignment = 2
+
+[node name="VBox" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = 140.0
+offset_right = -24.0
+offset_bottom = -24.0
+theme_override_constants/separation = 10
+
+[node name="BtnCampaign" type="Button" parent="VBox"]
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "КАМПАНИЯ"
+
+[node name="BtnClassic" type="Button" parent="VBox"]
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "КЛАССИКА"
+
+[node name="BtnEndless" type="Button" parent="VBox"]
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "ENDLESS"
+
+[node name="BtnArena" type="Button" parent="VBox"]
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "АРЕНА"
+
+[node name="BtnHero" type="Button" parent="VBox"]
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "СМЕНИТЬ ГЕРОЯ"
+
+[connection signal="pressed" from="VBox/BtnCampaign" to="." method="_on_campaign"]
+[connection signal="pressed" from="VBox/BtnClassic" to="." method="_on_classic"]
+[connection signal="pressed" from="VBox/BtnEndless" to="." method="_on_endless"]
+[connection signal="pressed" from="VBox/BtnArena" to="." method="_on_arena"]
+[connection signal="pressed" from="VBox/BtnHero" to="." method="_on_hero_next"]

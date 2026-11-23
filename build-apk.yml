@@ -1,0 +1,77 @@
+name: Build Godot APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Godot 4.3
+        run: |
+          set -e
+          curl -L -o godot.zip "https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip"
+          unzip -o godot.zip
+          mv Godot_v4.3-stable_linux.x86_64 godot
+          chmod +x godot
+          curl -L -o templates.tpz "https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_export_templates.tpz"
+          mkdir -p "$HOME/.local/share/godot/export_templates/4.3.stable"
+          unzip -o templates.tpz -d /tmp/templates
+          # tpz extracts to templates/
+          if [ -d /tmp/templates/templates ]; then
+            cp -a /tmp/templates/templates/* "$HOME/.local/share/godot/export_templates/4.3.stable/" || true
+          fi
+          # alternate layout
+          find /tmp/templates -type f | head
+          cp -a /tmp/templates/* "$HOME/.local/share/godot/export_templates/4.3.stable/" 2>/dev/null || true
+          ls -la "$HOME/.local/share/godot/export_templates/4.3.stable/" || true
+
+      - name: Debug keystore
+        run: |
+          keytool -genkeypair -v -keystore debug.keystore -storepass android -alias androiddebugkey \
+            -keypass android -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=PixelOrbit,O=Azena,C=RU" || true
+          mkdir -p "$HOME/.local/share/godot/keystores"
+          cp debug.keystore "$HOME/.local/share/godot/keystores/" 2>/dev/null || true
+
+      - name: Write editor settings for Android
+        run: |
+          mkdir -p "$HOME/.config/godot"
+          cat > "$HOME/.config/godot/editor_settings-4.3.tres" << SETTINGS
+          [gd_resource type="EditorSettings" format=3]
+          [resource]
+          export/android/android_sdk_path = "${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          export/android/debug_keystore = "$(pwd)/debug.keystore"
+          export/android/debug_keystore_user = "androiddebugkey"
+          export/android/debug_keystore_pass = "android"
+          SETTINGS
+
+      - name: Export APK
+        run: |
+          set -e
+          mkdir -p build
+          # Import project once
+          ./godot --headless --path . --import || true
+          # Try gradle android export
+          ./godot --headless --path . --export-release "Android" build/PixelOrbit.apk || \
+          ./godot --headless --path . --export-debug "Android" build/PixelOrbit.apk
+          ls -la build/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pixelorbit-godot-apk
+          path: build/PixelOrbit.apk
+          if-no-files-found: error
